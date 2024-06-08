@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Google Calendar API Quickstart</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>Google Calendar API Quickstart</h1>
+
+    <!-- Adiciona botões para iniciar a sequência de autenticação e sair -->
+    <button id="authorize_button" onclick="handleAuthClick()">Authorize</button>
+    <button id="signout_button" onclick="handleSignoutClick()">Sign Out</button>
+
+    <!-- Formulário para criar um evento no Google Calendar -->
+    <div id="event_form">
+      <div>
+        <label for="event_name">Event Name:</label>
+        <input type="text" id="event_name" />
+      </div>
+      <div>
+        <label for="event_date">Event Date:</label>
+        <input type="date" id="event_date" />
+      </div>
+      <div>
+        <label for="event_time">Event Time:</label>
+        <input type="time" id="event_time" />
+      </div>
+      <div>
+        <label for="event_location">Event Location:</label>
+        <input type="text" id="event_location" />
+      </div>
+      <button onclick="evento()">Create Event</button>
+    </div>
+
+    <!-- Área para exibir o conteúdo -->
+    <pre id="content"></pre>
+
+    <script type="text/javascript">
+      // Define as constantes necessárias para o uso da API do Google Calendar
+      const CLIENT_ID =
+        "369432279870-p6eiqd038uma3m90vsbj21lccqqua7e7.apps.googleusercontent.com";
+      const API_KEY = "AIzaSyA9MiIsE6jdssGFXqAXt3FkfHGreEPuXfQ";
+
+      // URL do documento de descoberta da API do Google Calendar
+      const DISCOVERY_DOC =
+        "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+
+      // Escopos de autorização necessários para a API
+      const SCOPES = "https://www.googleapis.com/auth/calendar.events";
+
+      let tokenClient;
+      let gapiInited = false;
+      let gisInited = false;
+
+      // Inicialmente esconde os botões de autorização e logout
+      document.getElementById("authorize_button").style.display = "none";
+      document.getElementById("signout_button").style.display = "none";
+
+      // Função chamada após o carregamento da biblioteca gapi.js
+      function gapiLoaded() {
+        gapi.load("client", initializeGapiClient);
+      }
+
+      // Inicializa o cliente da API após o carregamento
+      async function initializeGapiClient() {
+        await gapi.client.init({
+          apiKey: API_KEY,
+          discoveryDocs: [DISCOVERY_DOC],
+        });
+        gapiInited = true;
+        maybeEnableButtons();
+      }
+
+      // Função chamada após o carregamento dos serviços de identidade do Google
+      function gisLoaded() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: "", // definido depois
+        });
+        gisInited = true;
+        maybeEnableButtons();
+      }
+
+      // Habilita a interação do usuário após o carregamento de todas as bibliotecas
+      function maybeEnableButtons() {
+        if (gapiInited && gisInited) {
+          document.getElementById("authorize_button").style.display = "inline-block";
+        }
+      }
+
+      // Função chamada ao clicar no botão de autorização
+      function handleAuthClick() {
+        tokenClient.callback = async (resp) => {
+          if (resp.error !== undefined) {
+            throw resp;
+          }
+          document.getElementById("signout_button").style.display = "inline-block";
+          document.getElementById("authorize_button").innerText = "Refresh";
+          await listUpcomingEvents();
+        };
+
+        if (gapi.client.getToken() === null) {
+          // Solicita ao usuário selecionar uma conta Google e consentir em compartilhar dados
+          tokenClient.requestAccessToken({ prompt: "consent" });
+        } else {
+          // Pula a exibição do seletor de contas e do diálogo de consentimento para uma sessão existente
+          tokenClient.requestAccessToken({ prompt: "" });
+        }
+      }
+
+      // Função chamada ao clicar no botão de logout
+      function handleSignoutClick() {
+        const token = gapi.client.getToken();
+        if (token !== null) {
+          google.accounts.oauth2.revoke(token.access_token);
+          gapi.client.setToken("");
+          document.getElementById("content").innerText = "";
+          document.getElementById("authorize_button").innerText = "Authorize";
+          document.getElementById("signout_button").style.display = "none";
+        }
+      }
+
+      // Lista os próximos 10 eventos do calendário autorizado do usuário
+      async function listUpcomingEvents() {
+        let response;
+        try {
+          const request = {
+            calendarId: "primary",
+            timeMin: new Date().toISOString(),
+            showDeleted: false,
+            singleEvents: true,
+            maxResults: 10,
+            orderBy: "startTime",
+          };
+          response = await gapi.client.calendar.events.list(request);
+        } catch (err) {
+          document.getElementById("content").innerText = err.message;
+          return;
+        }
+
+        const events = response.result.items;
+        if (!events || events.length == 0) {
+          document.getElementById("content").innerText = "No events found.";
+          return;
+        }
+        // Formata os eventos em uma string para exibição
+        const output = events.reduce(
+          (str, event) =>
+            `${str}${event.summary} (${event.start.dateTime || event.start.date})\n`,
+          "Events:\n"
+        );
+        document.getElementById("content").innerText = output;
+      }
+
+      // Função para criar um evento no Google Calendar
+      async function evento() {
+        const eventName = document.getElementById("event_name").value;
+        const eventDate = document.getElementById("event_date").value;
+        const eventTime = document.getElementById("event_time").value;
+        const eventLocation = document.getElementById("event_location").value;
+
+        // Define o fuso horário para o Brasil
+        const brazilTimezone = "America/Sao_Paulo";
+
+        // Calcula a hora de término do evento adicionando 1 hora à hora de início
+        const startDate = new Date(eventDate + "T" + eventTime);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
+        const event = {
+          summary: eventName,
+          location: eventLocation,
+          description: "A chance to hear more about Google's developer products.",
+          start: {
+            dateTime: startDate.toISOString(),
+            timeZone: brazilTimezone,
+          },
+          end: {
+            dateTime: endDate.toISOString(),
+            timeZone: brazilTimezone,
+          },
+          attendees: [
+            //email de uma casinha
+            { email: "c_1884ea6rtpl98gg6hdobm2htogeds@resource.calendar.google.com" },
+          ],
+          reminders: {
+            useDefault: false,
+            overrides: [
+              { method: "email", minutes: 24 * 60 },
+              { method: "popup", minutes: 10 },
+            ],
+          },
+        };
+
+        try {
+          const request = await gapi.client.calendar.events.insert({
+            calendarId: "primary",
+            resource: event,
+          });
+          appendPre("Event created: " + request.result.htmlLink);
+        } catch (error) {
+          appendPre("Error creating event: " + error.result.error.message);
+        }
+      }
+
+      // Adiciona uma mensagem à área de conteúdo
+      function appendPre(message) {
+        var pre = document.getElementById("content");
+        var textContent = document.createTextNode(message + "\n");
+        pre.appendChild(textContent);
+      }
+    </script>
+
+    <!-- Carrega a biblioteca API do Google de forma assíncrona -->
+    <script
+      async
+      defer
+      src="https://apis.google.com/js/api.js"
+      onload="gapiLoaded()"
+    ></script>
+    <!-- Carrega a biblioteca de serviços de identidade do Google de forma assíncrona -->
+    <script
+      async
+      defer
+      src="https://accounts.google.com/gsi/client"
+      onload="gisLoaded()"
+    ></script>
+  </body>
+</html>
